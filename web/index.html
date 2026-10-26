@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YouTube transcript search</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Ccircle cx='28' cy='28' r='14' fill='none' stroke='%23ffb547' stroke-width='6'/%3E%3Cpath d='M38 38l14 14' stroke='%23ffb547' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E">
+  <style>
+    /* YouTube transcript search */
+
+    :root {
+      --bg: #0b1020;
+      --bg-2: #121a33;
+      --card: #161f3d;
+      --card-hover: #1c2850;
+      --border: #26325c;
+      --text: #e8ecf8;
+      --muted: #98a3c7;
+      --accent: #ffb547;
+      --live: #3ddc84;
+      --offline: #ff6b6b;
+      --radius: 14px;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(1200px 600px at 15% -10%, #24306a 0%, transparent 60%),
+        radial-gradient(900px 500px at 110% 10%, #3a2350 0%, transparent 55%),
+        var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      line-height: 1.5;
+    }
+
+    a { color: inherit; }
+
+    /* ---------- header ---------- */
+
+    .site-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px clamp(16px, 4vw, 48px);
+      border-bottom: 1px solid var(--border);
+      background: rgba(11, 16, 32, 0.6);
+      backdrop-filter: blur(8px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: 0.02em;
+      text-decoration: none;
+    }
+
+    .logo span { color: var(--accent); }
+
+    .site-nav { display: flex; gap: 6px; }
+
+    .site-nav a {
+      text-decoration: none;
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .site-nav a:hover { color: var(--text); background: var(--card); }
+
+    .site-nav a[aria-current="page"] { color: var(--bg); background: var(--accent); }
+
+    main {
+      flex: 1;
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: clamp(24px, 5vw, 56px) clamp(16px, 4vw, 48px);
+    }
+
+    .site-footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 24px 16px 32px;
+    }
+
+
+    .page-title { margin: 0 0 6px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
+    .page-intro { margin: 0 0 28px; color: var(--muted); }
+    .section-title { margin: 0 0 6px; font-size: 1.25rem; }
+    .site-footer a { color: var(--muted); }
+    .site-footer a:hover { color: var(--text); }
+
+    .logo { white-space: nowrap; }
+
+    /* ---------- YouTube search ---------- */
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .field, .yt-select {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      color: var(--text);
+      font: inherit;
+      min-width: 0;
+    }
+
+    .field:focus, .yt-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .btn {
+      padding: 10px 18px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-2);
+      color: var(--text);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn:hover:not(:disabled) { background: var(--card-hover); }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+    .btn-primary:hover:not(:disabled) { background: #ffc46e; }
+    .btn-small { padding: 5px 12px; font-size: 0.82rem; }
+    .btn-danger:hover:not(:disabled) { color: var(--offline); }
+
+    .search-row { display: flex; gap: 10px; }
+    .search-row .field { flex: 1; font-size: 1.05rem; }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 18px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .filters label { display: inline-flex; align-items: center; gap: 8px; }
+    .filters .yt-select { padding: 6px 10px; font-size: 0.9rem; }
+
+    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+
+    .seg button {
+      padding: 6px 12px;
+      border: 0;
+      background: var(--bg-2);
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .seg button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+
+    .results-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 26px 0 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .results-head strong { color: var(--text); }
+
+    .results { display: grid; gap: 14px; }
+
+    .result { padding: 16px 18px; }
+    .result-title { margin: 0; font-size: 1.05rem; line-height: 1.35; }
+    .result-title a { text-decoration: none; }
+    .result-title a:hover { color: var(--accent); }
+
+    .result-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 12px;
+      margin: 4px 0 12px;
+      color: var(--muted);
+      font-size: 0.83rem;
+    }
+
+    .tag {
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .tag-live { color: #ff8a8a; border-color: rgba(255, 107, 107, 0.45); }
+    .tag-warn { color: var(--accent); border-color: rgba(255, 181, 71, 0.45); }
+    .tag-error { color: var(--offline); border-color: rgba(255, 107, 107, 0.45); }
+
+    .hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .hit { display: flex; gap: 12px; align-items: baseline; }
+    .hit[hidden] { display: none; }
+
+    .ts {
+      flex: none;
+      min-width: 64px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(255, 181, 71, 0.12);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    .ts:hover { background: rgba(255, 181, 71, 0.25); }
+    .hit-text { color: var(--muted); font-size: 0.93rem; }
+    .hit-text mark { background: none; color: var(--text); font-weight: 700; box-shadow: inset 0 -2px 0 var(--accent); }
+
+    .more-hits {
+      margin-top: 8px;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--accent);
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .empty { padding: 28px; text-align: center; color: var(--muted); }
+
+    .section { margin-top: 48px; }
+    .section-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 14px; }
+    .section-head .section-title { margin: 0; }
+    .nightly { color: var(--muted); font-size: 0.85rem; }
+    .nightly b { color: var(--live); font-weight: 600; }
+    .nightly b.bad { color: var(--offline); }
+
+    .channels { display: grid; gap: 10px; }
+
+    .channel {
+      display: grid;
+      grid-template-columns: minmax(160px, 1.3fr) 2fr auto;
+      gap: 10px 20px;
+      align-items: center;
+      padding: 14px 18px;
+    }
+
+    .channel-name { font-weight: 700; }
+    .channel-name a { text-decoration: none; }
+    .channel-name a:hover { color: var(--accent); }
+    .channel-sub { color: var(--muted); font-size: 0.82rem; }
+    .channel-status { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+    .coverage-label { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 0.8rem; margin-bottom: 5px; }
+    .coverage-label span:first-child { color: var(--text); font-weight: 600; }
+    .coverage { position: relative; height: 8px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border); }
+    .coverage-fill { position: absolute; top: 0; bottom: 0; min-width: 6px; border-radius: 999px; background: linear-gradient(90deg, var(--accent), #ff7ab6); }
+    .coverage-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.7rem; margin-top: 3px; opacity: 0.8; }
+
+    .channel-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .job { grid-column: 1 / -1; }
+    .progress { position: relative; height: 6px; border-radius: 999px; background: var(--bg-2); overflow: hidden; margin: 6px 0 4px; }
+    .progress::after { content: ""; position: absolute; top: 0; bottom: 0; width: 30%; border-radius: 999px; background: var(--live); animation: sweep 1.6s ease-in-out infinite; }
+    .progress.waiting::after { background: var(--border); animation: none; width: 100%; }
+    @keyframes sweep { from { left: -30%; } to { left: 100%; } }
+    .job-text { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .job-wait { color: var(--accent); }
+    .job-error { color: var(--offline); font-size: 0.8rem; overflow-wrap: anywhere; }
+
+    .storage { margin: 10px 2px 0; color: var(--muted); font-size: 0.85rem; text-align: right; }
+    .storage b { color: var(--text); font-weight: 600; }
+
+    .add { margin-top: 14px; }
+    .add h3 { margin: 0 0 12px; font-size: 1.05rem; }
+    .add-row { display: flex; flex-wrap: wrap; gap: 10px; }
+    .add-row .field { flex: 1 1 260px; }
+    .add-back { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+    .add-row .add-back .field { flex: none; width: 76px; }
+    .add-note { margin: 10px 0 0; color: var(--muted); font-size: 0.85rem; }
+    .add-note b { color: var(--text); }
+    .add-note.error { color: var(--offline); }
+
+    @media (max-width: 720px) {
+      .channel { grid-template-columns: 1fr; }
+      .channel-actions { justify-content: flex-start; }
+      .search-row .btn { padding: 10px 14px; }
+      .hit { gap: 10px; }
+      .ts { min-width: 56px; }
+    }
+
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="./">YouTube <span>search</span></a>
+  </header>
+
+  <main>
+    <h1 class="page-title">YouTube search</h1>
+    <p class="page-intro">Search what was said in the channels below. Click a time to open the video at that moment.</p>
+
+    <form class="panel" id="search-form" autocomplete="off">
+      <div class="search-row">
+        <input class="field" id="q" type="search" placeholder="Search transcripts" aria-label="Search transcripts">
+        <button class="btn btn-primary" type="submit">Search</button>
+      </div>
+      <div class="filters">
+        <span class="seg" role="group" aria-label="Match">
+          <button type="button" data-mode="words" aria-pressed="true" title="Every word in the same passage (about 15 seconds), any order">All words</button>
+          <button type="button" data-mode="phrase" aria-pressed="false" title="These words together, in this order">Exact phrase</button>
+        </span>
+        <label>Channel
+          <select class="yt-select" id="f-channel"><option value="">All channels</option></select>
+        </label>
+        <label>Published
+          <select class="yt-select" id="f-days">
+            <option value="">Any time</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 3 months</option>
+          </select>
+        </label>
+        <label>Sort
+          <select class="yt-select" id="f-sort">
+            <option value="new">Newest first</option>
+            <option value="hits">Most matches</option>
+          </select>
+        </label>
+      </div>
+    </form>
+
+    <div class="results-head" id="results-head" hidden></div>
+    <div class="results" id="results"></div>
+
+    <section class="section" aria-labelledby="channels-title">
+      <div class="section-head">
+        <h2 class="section-title" id="channels-title">Channels</h2>
+        <span class="nightly" id="nightly"></span>
+      </div>
+
+      <div class="channels" id="channels"></div>
+      <p class="storage" id="storage"></p>
+
+      <form class="panel add" id="add-form" autocomplete="off">
+        <h3>Add a channel or fetch further back</h3>
+        <div class="add-row">
+          <input class="field" id="add-url" placeholder="@handle or channel URL" aria-label="Channel" list="known-channels">
+          <datalist id="known-channels"></datalist>
+          <label class="add-back">Last
+            <input class="field" id="add-n" type="number" min="1" max="120" step="1" value="1" inputmode="numeric" aria-label="How far back">
+            <select class="yt-select" id="add-unit" aria-label="Days, weeks or months">
+              <option value="days">days</option>
+              <option value="weeks">weeks</option>
+              <option value="months" selected>months</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" type="submit">Fetch transcripts</button>
+        </div>
+        <p class="add-note" id="add-note"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="site-footer"><a href="https://github.com/Lv2hack/yt-transcript-search">yt-transcript-search</a> · transcripts by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a></footer>
+
+  <script>
+    // Transcripts come from ytsearch.py, which serves this page and the API under /api/yt/.
+    const API = "/api/yt";
+    const ADD_NOTE = "Videos and livestreams only (no Shorts). Videos already downloaded are skipped.";
+
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const parseDay = (iso) => new Date(iso + "T12:00:00");
+    const dayDiff = (a, b) => Math.round((parseDay(a) - parseDay(b)) / 86400000);
+    const fmtDate = (iso) => {
+      if (!iso) return "?";
+      const d = parseDay(iso);
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+    };
+    const fmtWhen = (isoTime) => {
+      if (!isoTime) return "never";
+      const d = new Date(isoTime), today = new Date();
+      const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      if (d.toDateString() === today.toDateString()) return `today ${time}`;
+      if (d.toDateString() === new Date(today - 86400000).toDateString()) return `yesterday ${time}`;
+      return `${fmtDate(isoTime.slice(0, 10))} ${time}`;
+    };
+    const fmtTime = (s) => {
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = String(s % 60).padStart(2, "0");
+      return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+    };
+    // Links start a few seconds early so the sentence isn't cut off.
+    const ytLink = (id, s) => `https://youtu.be/${id}?t=${Math.max(0, s - 3)}`;
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const fmtBytes = (b) => {
+      const units = ["bytes", "KB", "MB", "GB", "TB"];
+      let i = 0;
+      while (b >= 1000 && i < units.length - 1) { b /= 1000; i++; }
+      return `${i ? b.toFixed(b < 10 ? 1 : 0) : b} ${units[i]}`;
+    };
+
+    async function api(path, options) {
+      const r = await fetch(API + path, options);
+      const data = await r.json().catch(() => ({ error: `${r.status} ${r.statusText}` }));
+      if (!r.ok) throw new Error(data.error || r.statusText);
+      return data;
+    }
+
+    // ----- search -----
+    let mode = "words", searchSeq = 0;
+
+    async function search() {
+      const q = $("#q").value.trim();
+      const head = $("#results-head"), out = $("#results");
+      const params = new URLSearchParams({ q, mode, channel: $("#f-channel").value, days: $("#f-days").value, sort: $("#f-sort").value });
+      history.replaceState(null, "", q ? "?" + params : location.pathname);
+      if (!q) { head.hidden = true; out.innerHTML = ""; return; }
+
+      const seq = ++searchSeq;
+      let data;
+      try {
+        data = await api("/search?" + params);
+      } catch (e) {
+        if (seq !== searchSeq) return;
+        head.hidden = true;
+        out.innerHTML = `<div class="panel empty">${esc(e.message)}</div>`;
+        return;
+      }
+      if (seq !== searchSeq) return;   // a newer search finished first
+
+      head.hidden = false;
+      head.innerHTML = `<span><strong>${data.total_hits}${data.capped ? "+" : ""}</strong> match${data.total_hits === 1 ? "" : "es"} in <strong>${data.total_videos}</strong> video${data.total_videos === 1 ? "" : "s"}${data.total_videos > data.results.length ? ` (showing ${data.results.length})` : ""}</span><span>Searched ${plural(data.searched, "transcript")} · upper/lower case ignored</span>`;
+
+      if (!data.results.length) {
+        out.innerHTML = `<div class="panel empty">No matches for “${esc(q)}”. Try fewer words${mode === "phrase" ? ", or <em>All words</em> instead of <em>Exact phrase</em>" : ""}.</div>`;
+        return;
+      }
+
+      out.innerHTML = data.results.map((v) => {
+        const items = v.hits.map((h, i) => `
+          <li class="hit"${i >= 3 ? " hidden" : ""}>
+            <a class="ts" href="${ytLink(v.id, h.t)}" target="_blank" rel="noopener">${fmtTime(h.t)}</a>
+            <span class="hit-text">${h.html}</span>
+          </li>`).join("");
+        return `
+          <article class="panel result">
+            <h3 class="result-title"><a href="https://youtu.be/${esc(v.id)}" target="_blank" rel="noopener">${esc(v.title)}</a></h3>
+            <div class="result-meta">
+              <span>${esc(v.channel)}</span><span>${fmtDate(v.date)}</span>
+              ${v.live ? '<span class="tag tag-live">Livestream</span>' : ""}
+              <span class="tag" title="${v.captions === "auto" ? "YouTube's speech-to-text: no punctuation, the odd misheard word" : "Captions uploaded by the creator"}">${v.captions === "auto" ? "Auto captions" : "Creator captions"}</span>
+            </div>
+            <ul class="hits">${items}</ul>
+            ${v.hits.length > 3 ? `<button class="more-hits" type="button">Show ${v.hits.length - 3} more</button>` : ""}
+          </article>`;
+      }).join("");
+    }
+
+    $("#search-form").addEventListener("submit", (e) => { e.preventDefault(); search(); });
+    ["#f-channel", "#f-days", "#f-sort"].forEach((s) => $(s).addEventListener("change", search));
+    document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      search();
+    }));
+    $("#results").addEventListener("click", (e) => {
+      if (!e.target.matches(".more-hits")) return;
+      e.target.previousElementSibling.querySelectorAll("[hidden]").forEach((li) => (li.hidden = false));
+      e.target.remove();
+    });
+
+    // ----- channels -----
+    let state = null, pollTimer = null;
+
+    function renderChannels() {
+      const { channels, job, queued, today } = state;
+      // Coverage bars share one scale: the last 6 months, or further if a channel goes back further.
+      const oldest = channels.reduce((m, c) => (c.covered_from && c.covered_from < m ? c.covered_from : m), today);
+      const span = Math.max(180, dayDiff(today, oldest));
+
+      const box = $("#channels");
+      if (!channels.length && !(job && !job.channel)) {
+        box.innerHTML = `<div class="panel empty">No channels yet. Add one below.</div>`;
+      } else {
+        box.innerHTML = channels.map((c) => {
+          const running = job && job.channel === c.id;
+          const waiting = queued.some((q) => q.channel === c.id);
+          const covered = c.covered_from && c.covered_to;
+          const left = covered ? ((span - dayDiff(today, c.covered_from)) / span) * 100 : 0;
+          const width = covered ? (dayDiff(c.covered_to, c.covered_from) / span) * 100 : 0;
+          const status = [
+            c.pending ? `<span class="tag tag-warn" title="Captions not ready yet (usually a recent livestream); retried each night">${c.pending} waiting for captions</span>` : "",
+            c.none ? `<span class="tag" title="YouTube has no captions for these, or they couldn't be read">${c.none} without captions</span>` : "",
+            c.last_error && !running ? `<span class="tag tag-error" title="${esc(c.last_error)}">Last fetch failed</span>` : "",
+          ].join("");
+          const link = c.handle ? `https://www.youtube.com/${c.handle}` : `https://www.youtube.com/channel/${c.id}`;
+          return `
+            <div class="panel channel" data-id="${esc(c.id)}">
+              <div>
+                <div class="channel-name"><a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.name)}</a></div>
+                <div class="channel-sub">${esc(c.handle || "")}${c.handle ? " · " : ""}updated ${fmtWhen(c.last_update)}</div>
+                <div class="channel-status">${status}</div>
+              </div>
+              <div>
+                <div class="coverage-label"><span>${covered ? `${fmtDate(c.covered_from)} – ${c.covered_to === today ? "today" : fmtDate(c.covered_to)}` : "Nothing yet"}</span><span>${plural(c.videos, "video")}${c.bytes ? ` · ${fmtBytes(c.bytes)}` : ""}</span></div>
+                <div class="coverage" title="Dates downloaded so far">${covered ? `<div class="coverage-fill" style="left:${left}%;width:${width}%"></div>` : ""}</div>
+                <div class="coverage-scale"><span>${span === 180 ? "6 months ago" : fmtDate(oldest)}</span><span>today</span></div>
+              </div>
+              <div class="channel-actions">
+                <button class="btn btn-small" data-act="update" ${running || waiting ? "disabled" : ""} title="Fetch what's new since the last update">Update now</button>
+                <button class="btn btn-small" data-act="back">Fetch further back</button>
+                <button class="btn btn-small btn-danger" data-act="remove" ${running ? "disabled" : ""}>Remove</button>
+              </div>
+              ${running ? jobHtml(job) : waiting ? `<div class="job"><div class="progress waiting"></div><div class="job-text">Waiting for another fetch to finish…</div></div>` : ""}
+              ${c.last_error && !running && !waiting ? `<div class="job job-error">${esc(c.last_error)}</div>` : ""}
+            </div>`;
+        }).join("");
+
+        // a new channel being looked up, before it has a row of its own
+        const pending = [job, ...queued].filter((j) => j && j.kind === "fetch" && !j.channel);
+        box.insertAdjacentHTML("beforeend", pending.map((j) => `
+          <div class="panel channel">
+            <div><div class="channel-name">${esc(j.label)}</div><div class="channel-sub">new channel</div></div>
+            <div></div><div></div>
+            ${j === job ? jobHtml(j) : `<div class="job"><div class="progress waiting"></div><div class="job-text">Waiting for another fetch to finish…</div></div>`}
+          </div>`).join(""));
+      }
+
+      // nightly run, and anything running that isn't one channel's fetch
+      const n = state.nightly;
+      let nightly = n
+        ? `Nightly update: <b class="${n.errors.length ? "bad" : ""}">${fmtWhen(n.at)}</b> · ${plural(n.added, "new video")}${n.pending ? ` · ${n.pending} waiting for captions` : ""}${n.errors.length ? ` · <span title="${esc(n.errors.join("\n"))}">${plural(n.errors.length, "problem")}</span>` : ""}`
+        : `Nightly update at ${state.nightly_at}: hasn't run yet`;
+      if (job && !job.channel && job.kind !== "fetch") nightly = `<b>${esc(job.label)}…</b>${job.current ? ` ${esc(job.current)}` : ""}`;
+      $("#nightly").innerHTML = nightly;
+
+      const st = state.storage;
+      $("#storage").innerHTML = st
+        ? `Transcripts use <b>${fmtBytes(st.db_bytes)}</b> · ${fmtBytes(st.free_bytes)} free on disk`
+        : "";
+
+      const selected = $("#f-channel").value;
+      $("#f-channel").innerHTML = `<option value="">All channels</option>` +
+        channels.map((c) => `<option value="${esc(c.id)}"${c.id === selected ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+      $("#known-channels").innerHTML = channels.filter((c) => c.handle).map((c) => `<option value="${esc(c.handle)}">`).join("");
+
+      const err = state.last_add_error;
+      if (err && Date.now() - new Date(err.at) < 10 * 60000 && !$("#add-url").value) {
+        $("#add-note").className = "add-note error";
+        $("#add-note").textContent = `Couldn't add ${err.label}: ${err.error}`;
+      }
+    }
+
+    function jobHtml(job) {
+      const parts = [job.checked ? `${plural(job.checked, "new video")} checked` : "Looking for new videos", job.added ? `${job.added} added` : ""].filter(Boolean);
+      return `
+        <div class="job">
+          <div class="progress"></div>
+          <div class="job-text">${job.waiting ? `<span class="job-wait">${esc(job.waiting)}</span> · ` : ""}${parts.join(" · ")}${job.current ? ` · now: ${esc(job.current)}` : ""}</div>
+        </div>`;
+    }
+
+    async function loadChannels() {
+      clearTimeout(pollTimer);
+      try {
+        state = await api("/channels");
+        renderChannels();
+      } catch (e) {
+        $("#channels").innerHTML = `<div class="panel empty">Couldn't load the channels: ${esc(e.message)}</div>`;
+      }
+      // quick refresh while something is fetching, slow otherwise
+      const busy = state && (state.job || state.queued.length);
+      pollTimer = setTimeout(loadChannels, busy ? 2000 : 60000);
+    }
+
+    function accept(newState) {
+      state = newState;
+      renderChannels();
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(loadChannels, 2000);
+    }
+
+    $("#channels").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const c = state.channels.find((x) => x.id === btn.closest(".channel").dataset.id);
+      try {
+        if (btn.dataset.act === "update") {
+          btn.disabled = true;
+          accept(await api(`/channels/${c.id}/update`, { method: "POST" }));
+        }
+        if (btn.dataset.act === "back") {
+          $("#add-url").value = c.handle || `https://www.youtube.com/channel/${c.id}`;
+          // suggest one month more than we already have
+          const have = c.covered_from ? dayDiff(state.today, c.covered_from) : 0;
+          $("#add-n").value = Math.floor(have / 30) + 1;
+          $("#add-unit").value = "months";
+          updateNote();
+          $("#add-form").scrollIntoView({ behavior: "smooth", block: "center" });
+          $("#add-url").focus({ preventScroll: true });
+        }
+        if (btn.dataset.act === "remove" && confirm(`Remove ${c.name} and its ${plural(c.videos, "transcript")}?`)) {
+          accept(await api(`/channels/${c.id}`, { method: "DELETE" }));
+          search();
+        }
+      } catch (err) {
+        alert(err.message);
+        loadChannels();
+      }
+    });
+
+    // "Last N days / weeks / months" -> days back from today (months are calendar months).
+    function backDays() {
+      const n = Math.max(1, Math.min(120, Math.round(+$("#add-n").value) || 1));
+      const unit = $("#add-unit").value;
+      if (unit === "days") return n;
+      if (unit === "weeks") return n * 7;
+      const today = new Date(), then = new Date(today);
+      then.setMonth(then.getMonth() - n);
+      return Math.round((today - then) / 86400000);
+    }
+
+    // Say up front what a fetch will actually download.
+    function updateNote() {
+      const note = $("#add-note");
+      note.className = "add-note";
+      if (!state) return (note.textContent = ADD_NOTE);
+      const text = $("#add-url").value.trim().toLowerCase();
+      const days = backDays();
+      const c = state.channels.find((x) => (x.handle && [x.handle.toLowerCase(), x.handle.slice(1).toLowerCase()].some((h) => text === h || text.endsWith("/" + h) || text.includes("/" + h + "/"))) || text.includes(x.id.toLowerCase()));
+      const cutoff = new Date(parseDay(state.today) - days * 86400000).toISOString().slice(0, 10);
+      if (c && c.covered_from) {
+        const to = c.covered_to === state.today ? "today" : fmtDate(c.covered_to);
+        const since = c.covered_to === state.today ? "" : `${fmtDate(c.covered_to)} – today`;
+        if (cutoff >= c.covered_from) {
+          note.innerHTML = `<b>Already have ${esc(c.name)} back to ${fmtDate(c.covered_from)}.</b> ${since ? `Will fetch only ${since}.` : "Only brand-new videos will be fetched."}`;
+        } else {
+          note.innerHTML = `<b>Already have ${fmtDate(c.covered_from)} – ${to}.</b> Will fetch only ${fmtDate(cutoff)} – ${fmtDate(c.covered_from)}${since ? ` and ${since}` : ""}.`;
+        }
+      } else if (text) {
+        note.textContent = `New channel: fetches back to ${fmtDate(cutoff)}. ${ADD_NOTE} A big first fetch can take an hour; it runs in the background, so you can leave this page.`;
+      } else {
+        note.textContent = ADD_NOTE;
+      }
+    }
+    $("#add-url").addEventListener("input", updateNote);
+    $("#add-n").addEventListener("input", updateNote);
+    $("#add-unit").addEventListener("change", updateNote);
+
+    $("#add-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const channel = $("#add-url").value.trim();
+      if (!channel) return $("#add-url").focus();
+      const button = e.submitter || $("#add-form button");
+      button.disabled = true;
+      try {
+        accept(await api("/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel, days: backDays() }) }));
+        $("#add-url").value = "";
+        updateNote();
+        $("#channels").lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch (err) {
+        $("#add-note").className = "add-note error";
+        $("#add-note").textContent = err.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // ----- start: restore a search from the address bar (so results can be bookmarked or shared) -----
+    const start = new URLSearchParams(location.search);
+    $("#q").value = start.get("q") || "";
+    if (start.get("mode") === "phrase") document.querySelector('.seg [data-mode="phrase"]').click();
+    $("#f-days").value = start.get("days") || "";
+    $("#f-sort").value = start.get("sort") || "new";
+    updateNote();
+    loadChannels().then(() => {
+      if (start.get("channel")) $("#f-channel").value = start.get("channel");
+      if ($("#q").value) search();
+    });
+  </script>
+</body>
+</html>

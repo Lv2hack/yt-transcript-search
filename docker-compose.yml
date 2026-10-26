@@ -1,0 +1,16 @@
+# YouTube transcript search.  Start/update:  docker compose up -d --build
+# Then open http://<this machine>:8002
+services:
+  yt-search:
+    build: .
+    image: yt-transcript-search
+    container_name: yt-search
+    user: "1000:1000"               # owner of ./data on the host (see README)
+    ports:
+      - "8002:8002"
+    environment:
+      NIGHTLY_AT: "03:00"           # local time of the nightly update
+    volumes:
+      - ./data:/data                # database, yt-dlp updates, caches
+      - /etc/localtime:/etc/localtime:ro   # local time for "today" and the nightly update
+    restart: unless-stopped
