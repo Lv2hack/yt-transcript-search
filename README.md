@@ -13,6 +13,9 @@ Runs in one Docker container. Built for a Raspberry Pi, and works on any Linux m
 - **Search**: case-insensitive, all words or exact phrase, filter by channel and date, newest
   first or most matches. Search links can be bookmarked.
 - **Timestamp links**: each match opens the YouTube video a few seconds before the words.
+- **Video lists and full transcripts**: each channel has a page listing its downloaded videos
+  (title, date, length). Click one to read its whole transcript, jump to the search matches,
+  copy it, or download it as a text file, with or without timestamps.
 - **Incremental fetching**: videos you already have are never downloaded again. Fetch the last
   month today and the last month again next week, and only the new week is downloaded. Ask for
   more months later, and only the older part is downloaded.
@@ -56,8 +59,8 @@ authentication (Caddy's `basic_auth`, for example) before exposing it to the int
 
 ## Behind your own web server
 
-The page calls the API at `/api/yt/`, so you can serve `web/index.html` as part of your own site
-and pass `/api/yt/` to the container. With nginx:
+The pages call the API at `/api/yt/`, so you can serve the files in `web/` as part of your own
+site and pass `/api/yt/` to the container. With nginx:
 
 ```nginx
 location /api/yt/ {
@@ -84,7 +87,7 @@ Environment variables, in `docker-compose.yml`:
 - **SQLite full-text search (FTS5)** stores the captions in passages of about 15 seconds. A search
   matches within one passage, so a phrase split across two passages can be missed.
 - **[ytsearch.py](ytsearch.py)** is a single Python file using only the standard library: the
-  fetcher, the nightly scheduler, and the web server for the page and API.
+  fetcher, the nightly scheduler, and the web server for the pages (`web/`) and API.
 - Data lives in `data/yt.db`. A few months of several channels takes tens of MB.
 
 If YouTube blocks downloads for a while (HTTP 429, or "Sign in to confirm you're not a bot"), the

@@ -16,13 +16,15 @@ fetches each channel's new videos and retries the pending ones. Fetches run one 
 Captions: the creator's English captions when there are some, otherwise YouTube's auto-generated
 ones. They're stored in passages of about 15 seconds; a search matches within one passage.
 
-HTTP on :PORT. It serves the page (web/index.html, when present) at / and the API under /api/yt/,
+HTTP on :PORT. It serves the pages (web/, when present) at / and the API under /api/yt/,
 so it can run on its own or behind another web server that passes /api/yt/ to it.
   GET    /api/yt/search?q=&mode=words|phrase&channel=&days=&sort=new|hits
   GET    /api/yt/channels                 channels, coverage, the running job and the nightly run
   POST   /api/yt/fetch                    body {"channel": "@handle or URL", "days": 30}
   POST   /api/yt/channels/<id>/update     fetch what's new since the last update
   DELETE /api/yt/channels/<id>            remove a channel and its transcripts
+  GET    /api/yt/channels/<id>/videos     the channel's downloaded videos
+  GET    /api/yt/videos/<id>              one video's whole transcript
 
 Settings come from the environment:
   DATA_DIR      database, yt-dlp updates and caches (default /data)
@@ -60,7 +62,9 @@ AUTO_LANGS = ["en-orig", "en"]              # en-orig is the speech-to-text in t
 PASSAGE_SECONDS = 15
 BACKOFF = [60, 180, 600]                    # seconds to wait after each "too many requests"
 
-PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "index.html")   # the page, when run on its own
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")   # the pages, when run on its own
+WEB_FILES = {"/": "index.html", "/index.html": "index.html", "/channel.html": "channel.html",
+             "/transcript.html": "transcript.html", "/style.css": "style.css"}
 
 YTDLP_ENV = {**os.environ, "PYTHONPATH": PYDEPS, "HOME": DATA_DIR, "XDG_CACHE_HOME": os.path.join(DATA_DIR, "cache")}
 
@@ -560,6 +564,31 @@ def channels_state():
         }
 
 
+def channel_videos(channel_id):
+    with db() as conn:
+        ch = conn.execute("SELECT id, name, handle, covered_from, covered_to FROM channels WHERE id = ?",
+                          (channel_id,)).fetchone()
+        if ch is None:
+            return None
+        rows = conn.execute("""SELECT id, title, upload_date AS date, duration, live, captions FROM videos
+                               WHERE channel_id = ? ORDER BY upload_date DESC, title""", (channel_id,)).fetchall()
+    return {"channel": dict(ch), "videos": [{**dict(r), "live": bool(r["live"])} for r in rows]}
+
+
+def video_transcript(video_id):
+    with db() as conn:
+        v = conn.execute("""SELECT v.id, v.title, v.upload_date AS date, v.duration, v.live, v.captions,
+                                   c.id AS channel_id, c.name AS channel
+                            FROM videos v JOIN channels c ON c.id = v.channel_id WHERE v.id = ?""",
+                         (video_id,)).fetchone()
+        if v is None:
+            return None
+        rows = conn.execute("SELECT CAST(start AS INTEGER) AS t, text FROM passages WHERE video_id = ?",
+                            (video_id,)).fetchall()
+    return {**dict(v), "live": bool(v["live"]),
+            "passages": sorted(({"t": r["t"], "text": r["text"]} for r in rows), key=lambda p: p["t"])}
+
+
 def remove_channel(channel_id):
     with state_lock:
         if job and job.get("channel") == channel_id:
@@ -595,23 +624,23 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError
         return data
 
-    def send_page(self):
+    def send_file(self, name):
         try:
-            with open(PAGE, "rb") as f:
+            with open(os.path.join(WEB_DIR, name), "rb") as f:
                 body = f.read()
         except OSError:
             self.send_json({"error": "not found"}, 404)
             return
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", "text/css; charset=utf-8" if name.endswith(".css") else "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
         path, params = self.route()
-        if urlsplit(self.path).path in ("/", "/index.html"):
-            self.send_page()
+        if urlsplit(self.path).path in WEB_FILES:
+            self.send_file(WEB_FILES[urlsplit(self.path).path])
         elif path == "/search":
             try:
                 self.send_json(search(params))
@@ -619,6 +648,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Couldn't search for that; try plain words."}, 400)
         elif path == "/channels":
             self.send_json(channels_state())
+        elif m := re.fullmatch(r"/channels/(UC[\w-]{22})/videos", path):
+            data = channel_videos(m[1])
+            self.send_json(data or {"error": "That channel isn't here (removed?)."}, 200 if data else 404)
+        elif m := re.fullmatch(r"/videos/([\w-]{11})", path):
+            data = video_transcript(m[1])
+            self.send_json(data or {"error": "That video isn't here (its channel removed?)."}, 200 if data else 404)
         else:
             self.send_json({"error": "not found"}, 404)
 

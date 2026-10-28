@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Channel videos · YouTube search</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Ccircle cx='28' cy='28' r='14' fill='none' stroke='%23ffb547' stroke-width='6'/%3E%3Cpath d='M38 38l14 14' stroke='%23ffb547' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="./">YouTube <span>search</span></a>
+  </header>
+
+  <main>
+    <a class="back-link" href="./">← YouTube search</a>
+    <h1 class="page-title" id="title">Channel videos</h1>
+    <p class="page-intro" id="intro">Loading…</p>
+
+    <div class="yt-videos-tools" id="tools" hidden>
+      <input class="field" id="filter" type="search" placeholder="Filter by title" aria-label="Filter by title">
+      <span id="count"></span>
+    </div>
+
+    <div class="panel yt-videos" id="videos" hidden></div>
+  </main>
+
+  <footer class="site-footer"><a href="https://github.com/Lv2hack/yt-transcript-search">yt-transcript-search</a> · transcripts by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a></footer>
+
+  <script>
+    // A channel's downloaded videos, from the yt-search container (/api/yt/channels/<id>/videos).
+    // Click a title for the whole transcript (youtube-transcript.html).
+    const API = "/api/yt";
+    const TRANSCRIPT_PAGE = "transcript.html";
+
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const parseDay = (iso) => new Date(iso + "T12:00:00");
+    const fmtDate = (iso) => iso ? parseDay(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "date unknown";
+    const fmtTime = (s) => {
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = String(s % 60).padStart(2, "0");
+      return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+    };
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const CAPTIONS = {
+      creator: ["", "Creator captions", "Captions uploaded by the creator"],
+      auto: ["", "Auto captions", "YouTube's speech-to-text: no punctuation, the odd misheard word"],
+      pending: ["tag-warn", "Waiting for captions", "Not ready yet (usually a recent livestream); retried each night"],
+      none: ["", "No captions", "YouTube has no captions for this video, or they couldn't be read"],
+    };
+
+    let videos = [];
+
+    function render() {
+      const words = $("#filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const shown = videos.filter((v) => words.every((w) => v.title.toLowerCase().includes(w)));
+      $("#count").textContent = words.length ? `${shown.length} of ${plural(videos.length, "video")}` : plural(videos.length, "video");
+      $("#videos").innerHTML = shown.length ? shown.map((v) => {
+        const [cls, label, tip] = CAPTIONS[v.captions] || CAPTIONS.none;
+        const readable = v.captions === "creator" || v.captions === "auto";
+        const title = readable
+          ? `<a href="${TRANSCRIPT_PAGE}?v=${encodeURIComponent(v.id)}">${esc(v.title)}</a>`
+          : `<span title="No transcript to show">${esc(v.title)}</span>`;
+        return `
+          <div class="yt-video">
+            <div class="yt-video-title">${title}</div>
+            <div class="result-meta">
+              <span>${fmtDate(v.date)}</span>
+              ${v.duration ? `<span>${fmtTime(v.duration)}</span>` : ""}
+              ${v.live ? '<span class="tag tag-live">Livestream</span>' : ""}
+              <span class="tag ${cls}" title="${tip}">${label}</span>
+              <a class="yt-video-watch" href="https://youtu.be/${encodeURIComponent(v.id)}" target="_blank" rel="noopener">YouTube ↗</a>
+            </div>
+          </div>`;
+      }).join("") : `<div class="empty">${videos.length ? "No titles match." : "No videos downloaded yet."}</div>`;
+    }
+
+    async function load() {
+      const id = new URLSearchParams(location.search).get("id") || "";
+      try {
+        const r = await fetch(`${API}/channels/${encodeURIComponent(id)}/videos`);
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || r.statusText);
+        const c = data.channel;
+        videos = data.videos;
+        document.title = `${c.name} · YouTube search`;
+        const link = c.handle ? `https://www.youtube.com/${c.handle}` : `https://www.youtube.com/channel/${c.id}`;
+        $("#title").textContent = c.name;
+        $("#intro").innerHTML = [
+          `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.handle || "Channel")} on YouTube ↗</a>`,
+          c.covered_from ? `downloaded ${fmtDate(c.covered_from)} – ${fmtDate(c.covered_to)}` : "",
+          "click a title to read or save its transcript",
+        ].filter(Boolean).join(" · ");
+        $("#tools").hidden = $("#videos").hidden = false;
+        render();
+      } catch (e) {
+        $("#intro").textContent = `Couldn't load this channel: ${e.message}`;
+      }
+    }
+
+    $("#filter").addEventListener("input", render);
+    load();
+  </script>
+</body>
+</html>

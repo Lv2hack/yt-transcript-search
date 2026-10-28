@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transcript · YouTube search</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Ccircle cx='28' cy='28' r='14' fill='none' stroke='%23ffb547' stroke-width='6'/%3E%3Cpath d='M38 38l14 14' stroke='%23ffb547' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="./">YouTube <span>search</span></a>
+  </header>
+
+  <main>
+    <nav class="back-links" id="back"><a class="back-link" href="./">← YouTube search</a></nav>
+    <h1 class="page-title" id="title">Transcript</h1>
+    <div class="result-meta tr-meta" id="meta">Loading…</div>
+
+    <div class="tr-tools" id="tools" hidden>
+      <a class="btn btn-small" id="watch" target="_blank" rel="noopener">Watch on YouTube ↗</a>
+      <button class="btn btn-small" type="button" id="copy">Copy all</button>
+      <button class="btn btn-small" type="button" id="download">Download .txt</button>
+      <label class="switch" title="Show the time of each passage; times are left out when you select and copy text">
+        <input type="checkbox" id="show-times" checked>
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-label">Timestamps</span>
+      </label>
+      <span class="tr-find" id="find" hidden></span>
+    </div>
+
+    <article class="panel tr-body" id="body" hidden></article>
+  </main>
+
+  <footer class="site-footer"><a href="https://github.com/Lv2hack/yt-transcript-search">yt-transcript-search</a> · transcripts by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a></footer>
+
+  <script>
+    // One video's whole transcript, from the yt-search container (/api/yt/videos/<id>), to read,
+    // copy or download as text. ?t=<seconds> jumps to that moment; ?q=<words> highlights them.
+    const API = "/api/yt";
+    const SEARCH_PAGE = "./";
+    const CHANNEL_PAGE = "channel.html";
+    const PARAGRAPH_SECONDS = 60;   // without timestamps, passages are joined into ~1-minute paragraphs
+
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parseDay = (iso) => new Date(iso + "T12:00:00");
+    const fmtDate = (iso) => iso ? parseDay(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "date unknown";
+    const fmtTime = (s) => {
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = String(s % 60).padStart(2, "0");
+      return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+    };
+    const ytLink = (id, s) => `https://youtu.be/${id}?t=${Math.max(0, s - 3)}`;
+
+    const params = new URLSearchParams(location.search);
+    const videoId = params.get("v") || "";
+    const jumpTo = params.has("t") ? +params.get("t") : null;
+    const query = (params.get("q") || "").trim();
+    const highlight = query ? new RegExp("\\b(" + query.split(/\s+/).map(reEsc).join("|") + ")\\b", "gi") : null;
+    let video = null, matchIndex = -1;
+
+    // ~1-minute paragraphs for reading and copying without timestamps
+    function paragraphs() {
+      const out = [];
+      for (const p of video.passages) {
+        const last = out[out.length - 1];
+        if (last && p.t - last.t < PARAGRAPH_SECONDS) last.text += " " + p.text;
+        else out.push({ t: p.t, text: p.text });
+      }
+      return out;
+    }
+
+    function render() {
+      const times = $("#show-times").checked;
+      // split on the search words (odd pieces are the matches), then escape each piece
+      const mark = (text) => highlight
+        ? text.split(highlight).map((piece, i) => (i % 2 ? `<mark>${esc(piece)}</mark>` : esc(piece))).join("")
+        : esc(text);
+      $("#body").classList.toggle("tr-plain", !times);
+      $("#body").innerHTML = times
+        ? video.passages.map((p) => `
+            <div class="tr-line" data-t="${p.t}">
+              <a class="ts" href="${ytLink(video.id, p.t)}" target="_blank" rel="noopener" title="Open the video here">${fmtTime(p.t)}</a>
+              <span class="hit-text">${mark(p.text)}</span>
+            </div>`).join("")
+        : paragraphs().map((p) => `<p data-t="${p.t}">${mark(p.text)}</p>`).join("");
+
+      const marks = $("#body").querySelectorAll("mark");
+      $("#find").hidden = !highlight;
+      if (highlight) {
+        $("#find").innerHTML = marks.length
+          ? `“${esc(query)}”: ${marks.length} place${marks.length === 1 ? "" : "s"} <button class="btn btn-small" type="button" id="next">Next ↓</button>`
+          : `“${esc(query)}” isn't in this transcript`;
+        $("#next")?.addEventListener("click", nextMatch);
+      }
+      matchIndex = -1;
+    }
+
+    function nextMatch() {
+      const marks = $("#body").querySelectorAll("mark");
+      if (!marks.length) return;
+      marks.forEach((m) => m.classList.remove("current"));
+      matchIndex = (matchIndex + 1) % marks.length;
+      marks[matchIndex].classList.add("current");
+      marks[matchIndex].scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    // Scroll to the passage or paragraph that contains second t.
+    function scrollToTime(t) {
+      const blocks = [...$("#body").querySelectorAll("[data-t]")];
+      const target = blocks.filter((b) => +b.dataset.t <= t).pop() || blocks[0];
+      if (!target) return;
+      target.classList.add("tr-flash");
+      target.scrollIntoView({ block: "center" });
+    }
+
+    function asText() {
+      const header = [video.title, `${video.channel} · ${fmtDate(video.date)}${video.duration ? ` · ${fmtTime(video.duration)}` : ""}`, `https://youtu.be/${video.id}`, ""];
+      const body = $("#show-times").checked
+        ? video.passages.map((p) => `[${fmtTime(p.t)}] ${p.text}`)
+        : paragraphs().map((p) => p.text + "\n");
+      return header.concat(body).join("\n").trimEnd() + "\n";
+    }
+
+    $("#show-times").addEventListener("change", () => {
+      // keep roughly the same place on the page when switching
+      const visible = [...$("#body").querySelectorAll("[data-t]")].find((b) => b.getBoundingClientRect().bottom > 80);
+      render();
+      if (visible) scrollToTime(+visible.dataset.t);
+    });
+
+    $("#copy").addEventListener("click", async () => {
+      const button = $("#copy");
+      try {
+        await navigator.clipboard.writeText(asText());
+        button.textContent = "Copied ✓";
+      } catch {
+        // no clipboard access (plain http): select the transcript so Ctrl/Cmd+C copies it
+        const range = document.createRange();
+        range.selectNodeContents($("#body"));
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+        button.textContent = "Selected: press Ctrl+C";
+      }
+      setTimeout(() => (button.textContent = "Copy all"), 2500);
+    });
+
+    $("#download").addEventListener("click", () => {
+      const name = `${video.date || ""} ${video.title}`.replace(/[\\/:*?"<>|\x00-\x1f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([asText()], { type: "text/plain;charset=utf-8" }));
+      a.download = `${name || video.id}.txt`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+
+    async function load() {
+      try {
+        const r = await fetch(`${API}/videos/${encodeURIComponent(videoId)}`);
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || r.statusText);
+        video = data;
+      } catch (e) {
+        $("#meta").textContent = `Couldn't load this transcript: ${e.message}`;
+        return;
+      }
+      document.title = `${video.title} · YouTube search`;
+      $("#title").textContent = video.title;
+      $("#back").innerHTML = [
+        query ? `<a class="back-link" href="${SEARCH_PAGE}?q=${encodeURIComponent(query)}">← Search results</a>` : `<a class="back-link" href="${SEARCH_PAGE}">← YouTube search</a>`,
+        `<a class="back-link" href="${CHANNEL_PAGE}?id=${encodeURIComponent(video.channel_id)}">${esc(video.channel)}: all videos</a>`,
+      ].join("");
+      $("#meta").innerHTML = `
+        <span>${esc(video.channel)}</span><span>${fmtDate(video.date)}</span>
+        ${video.duration ? `<span>${fmtTime(video.duration)}</span>` : ""}
+        ${video.live ? '<span class="tag tag-live">Livestream</span>' : ""}
+        <span class="tag">${video.captions === "auto" ? "Auto captions" : video.captions === "creator" ? "Creator captions" : "No captions"}</span>`;
+      $("#watch").href = `https://youtu.be/${video.id}`;
+      $("#tools").hidden = false;
+      $("#body").hidden = false;
+      if (!video.passages.length) {
+        $("#body").innerHTML = `<div class="empty">There's no transcript for this video${video.captions === "pending" ? " yet; captions are retried each night" : ""}.</div>`;
+        $("#copy").disabled = $("#download").disabled = true;
+        return;
+      }
+      render();
+      if (jumpTo !== null) scrollToTime(jumpTo);
+      else if (highlight) nextMatch();
+    }
+
+    load();
+  </script>
+</body>
+</html>
